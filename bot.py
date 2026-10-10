@@ -820,8 +820,6 @@ def handle_text(tg, db, jobs, user, text):
     elif cmd == "/stop":
         db.set(chat, active=0)
         tg.send(chat, t("stopped", lang))
-    elif cmd.startswith("/"):
-        tg.send(chat, t("help", lang))
     elif cmd == "/price":
         wishes = db.wishes(chat)
         if not wishes:
@@ -830,6 +828,8 @@ def handle_text(tg, db, jobs, user, text):
             tg.send(chat, t("price_choose", lang), buttons=[
                 [{"text": f"💰 {w['keyword']} ({price_label(w.get('min_price'), w.get('max_price'), lang)})",
                   "callback_data": f"price:{w['id']}"}] for w in wishes])
+    elif cmd.startswith("/"):
+        tg.send(chat, t("help", lang))
     elif pending.get("type") == "await_price":
         rng = parse_price_range(text)
         if rng is None:
