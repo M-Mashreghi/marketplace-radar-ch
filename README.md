@@ -12,7 +12,15 @@ You tell the bot where you live and what you are looking for, in any language. E
 - 👥 **Many users:** anyone you share the bot with gets their own language, area and list
 - 🔁 **No duplicates:** each listing is sent once, even when the same ad is on two sites
 
-The bot runs on your own computer (it is written for Windows, but runs anywhere Python does). It uses **only the Python standard library**, so there is nothing to `pip install`.
+You can run it in three places:
+
+| Where | On when | Cost | How |
+|---|---|---|---|
+| **Your Windows PC** | while the PC is on and you're logged in | free | [step 8](#8-keep-it-running-on-windows-or-linux) |
+| **A Linux computer or server** | while it's on (a server: always) | free / your server | [step 8](#linux-systemd) |
+| **Cloudflare** | **24/7, no computer needed** | Workers Paid plan, 5 USD/month | [step 9](#9-run-it-on-cloudflare-247) |
+
+On Windows and Linux the bot is plain Python using **only the standard library**, so there is nothing to `pip install`. The Cloudflare version (in the `cloudflare/` folder) is the same bot rewritten as a Cloudflare Worker: same commands, same messages, same searches.
 
 > This is an unofficial hobby project. It is not affiliated with anibis.ch, tutti.ch, ricardo.ch or Telegram.
 
@@ -27,13 +35,14 @@ The bot runs on your own computer (it is written for Windows, but runs anywhere 
 5. [Test the connection](#5-test-the-connection-optional)
 6. [Start the bot](#6-start-the-bot)
 7. [First steps in Telegram](#7-first-steps-in-telegram)
-8. [Keep it running on Windows](#8-keep-it-running-on-windows)
-9. [All Telegram commands](#9-all-telegram-commands)
-10. [Sharing the bot with friends](#10-sharing-the-bot-with-friends)
-11. [How it works](#11-how-it-works)
-12. [Files](#12-files)
-13. [Privacy: never commit config.json or bot.db](#13-privacy-never-commit-configjson-or-botdb)
-14. [Troubleshooting](#14-troubleshooting)
+8. [Keep it running on Windows or Linux](#8-keep-it-running-on-windows-or-linux)
+9. [Run it on Cloudflare (24/7)](#9-run-it-on-cloudflare-247)
+10. [All Telegram commands](#10-all-telegram-commands)
+11. [Sharing the bot with friends](#11-sharing-the-bot-with-friends)
+12. [How it works](#12-how-it-works)
+13. [Files](#13-files)
+14. [Privacy: never commit config.json or bot.db](#14-privacy-never-commit-configjson-or-botdb)
+15. [Troubleshooting](#15-troubleshooting)
 
 ---
 
@@ -114,7 +123,15 @@ Open `config.json` in a text editor (Notepad is fine) and paste your token:
 |---|---|---|
 | `telegram_bot_token` | **yes** | The token from BotFather. The bot will not start without it. |
 | `telegram_chat_id` | no | Only used by `telegram_setup.py` to send you a test message. Leave it empty; the setup script fills it in. |
-| `allowed_chat_ids` | no | A list of Telegram chat ids that may use the bot, e.g. `["111111111", "222222222"]`. Without it, **anyone** who finds your bot can use it. See [Sharing the bot](#10-sharing-the-bot-with-friends). |
+| `allowed_chat_ids` | no | A list of Telegram chat ids that may use the bot, e.g. `["111111111", "222222222"]`. Without it, **anyone** who finds your bot can use it. See [Sharing the bot](#11-sharing-the-bot-with-friends). |
+
+On a server you can use **environment variables** instead of (or on top of) `config.json`; they win over the file:
+
+| Variable | Same as |
+|---|---|
+| `TELEGRAM_BOT_TOKEN` | `telegram_bot_token` |
+| `ALLOWED_CHAT_IDS` | `allowed_chat_ids`, comma separated: `111111111,222222222` |
+| `DATA_DIR` | Folder for `bot.db` and `anibis_alert.log` (default: the project folder) |
 
 A full example with every setting:
 
@@ -225,7 +242,9 @@ Listings whose title uses one of the *similar names* rather than the main words 
 
 After you choose an area, after you add an item, after `/check` and after every automatic 2-hour check, the bot sends a short **report** for each search on each site: whether your area was found there, a link to the same search on the site, how many listings it found or how many were new, and any error.
 
-## 8. Keep it running on Windows
+## 8. Keep it running on Windows or Linux
+
+### Windows
 
 When you're happy with it, let Windows start the bot for you, in the background, without a window:
 
@@ -249,9 +268,107 @@ The bot starts about a minute after you install it. Running the installer again 
 
 The computer must be **on and logged in** for the bot to work. If it sleeps, the bot catches up after it wakes. More details are in [SCHEDULE.md](SCHEDULE.md).
 
-**macOS / Linux:** the scheduler scripts are Windows-only. Run `python3 bot.py` inside `tmux` or `screen`, or as a `systemd` service, so it keeps running after you close the terminal.
+<a id="linux-systemd"></a>
+### Linux (systemd)
 
-## 9. All Telegram commands
+On Linux (Ubuntu, Debian, Raspberry Pi OS, a cloud server…) the bot runs as a **systemd service**: it starts when the computer starts, restarts itself if it crashes, and keeps running after you log out.
+
+1. Do steps 2 to 6 above (`python3 bot.py` to try it, then `Ctrl+C` to stop it).
+2. In the project folder, run:
+
+   ```
+   bash linux/install_service.sh
+   ```
+
+   It asks for your `sudo` password once and creates the service **marketplace-radar**, running as your user from this folder.
+
+| To… | Do this |
+|---|---|
+| Check it's running | `systemctl status marketplace-radar` |
+| See what it's doing | `journalctl -u marketplace-radar -f` (or `anibis_alert.log`) |
+| Restart after changing files | `sudo systemctl restart marketplace-radar` |
+| Remove it for good | `bash linux/remove_service.sh` |
+
+**macOS:** run `python3 bot.py` inside `tmux` or `screen`, so it keeps running after you close the terminal.
+
+> **Only one copy of the bot at a time.** One Telegram bot can only be answered by one copy. Don't run it on Windows, Linux and Cloudflare at the same time: stop the old one first.
+
+## 9. Run it on Cloudflare (24/7)
+
+The `cloudflare/` folder contains the same bot as a **Cloudflare Worker**, so it runs on Cloudflare's servers day and night and your computer can be off.
+
+### How it works there
+
+- Telegram delivers every message straight to the Worker (a *webhook*), so the bot answers at once.
+- A timer (*cron trigger*) runs the Worker **every minute**. It first does any waiting `/check`, new area or new item, then the users whose 2-hour check is due. So after `/check`, results arrive within about a minute.
+- Everything the Python version keeps in `bot.db` is kept in a Cloudflare **D1** database instead (same tables).
+- The bot token is a Cloudflare **secret**: it is never in a file and never in git.
+
+### What it costs
+
+You need the **Workers Paid** plan (**5 USD per month**). The free plan stops each run after 10 ms of computing and 50 web requests, and one check of one user reads dozens of pages, so it would break. This bot's use stays well inside what the paid plan includes, so 5 USD/month is normally the whole bill.
+
+### Will the marketplaces answer Cloudflare?
+
+That can only be checked from Cloudflare itself: some sites block requests coming from data centres. The `/setup` page (step 7 below) tests anibis.ch, tutti.ch, ricardo.ch, Google Translate and Telegram from your Worker and shows ✅ or ❌ for each. If a site shows ❌, the others keep working; if you need that site, run the bot on Windows or Linux instead.
+
+### Setup (once)
+
+You need [Node.js](https://nodejs.org/) (the **LTS** version) on your computer, only for uploading. Open a terminal in the project folder (on Windows use **Command Prompt**, `cmd`) and:
+
+1. **Create a Cloudflare account** at <https://dash.cloudflare.com/sign-up>, then choose the **Workers Paid** plan under *Workers & Pages → Plans*.
+2. **Install the tools and log in:**
+
+   ```
+   cd cloudflare
+   npm install
+   npx wrangler login
+   ```
+
+   A browser window opens; allow access.
+3. **Create the database:**
+
+   ```
+   npx wrangler d1 create marketplace-radar
+   ```
+
+   It prints a `database_id`. Open `cloudflare/wrangler.toml` and paste it in place of `PASTE_YOUR_DATABASE_ID_HERE`.
+4. **Who may use the bot (optional):** in `wrangler.toml`, set `ALLOWED_CHAT_IDS = "111111111,222222222"`. Empty means everyone.
+5. **Stop the bot on your computer** if it runs there (Windows: `remove_schedule.bat`; Linux: `bash linux/remove_service.sh`).
+6. **Upload the bot and its token:**
+
+   ```
+   npx wrangler deploy
+   npx wrangler secret put TELEGRAM_BOT_TOKEN
+   ```
+
+   `deploy` prints your Worker's address, like `https://marketplace-radar-ch.<your-name>.workers.dev`. `secret put` asks for the token: paste the one from BotFather and press Enter (nothing is shown while you paste).
+7. **Connect Telegram:** open `https://marketplace-radar-ch.<your-name>.workers.dev/setup` in your browser. It connects the bot to the Worker and tests every site. When every line is ✅, open your bot in Telegram and send `/start`.
+
+### Moving your users from the Python version (optional)
+
+If people already use the bot on your computer, copy their settings so nobody starts over. In the **project folder** (where `bot.db` is):
+
+```
+python tools/export_to_d1.py
+cd cloudflare
+npx wrangler d1 execute marketplace-radar --remote --file ../d1_import.sql
+```
+
+Then delete `d1_import.sql` (it contains everyone's chat id and list; it's in `.gitignore`).
+
+### Day to day
+
+| To… | Do this (in the `cloudflare` folder) |
+|---|---|
+| See what it's doing | `npx wrangler tail` (live), or the Worker's *Logs* tab in the Cloudflare dashboard |
+| Update after changing the code | `npx wrangler deploy` (if you changed `texts.py`, first run `python cloudflare/scripts/export_texts.py` from the project folder) |
+| Change the token | `npx wrangler secret put TELEGRAM_BOT_TOKEN`, then open `/setup` again |
+| Test it on your computer | `npm test` (uses saved pages, no internet and no Cloudflare account needed) |
+| Pause it | Cloudflare dashboard → your Worker → *Settings → Triggers*: remove the cron trigger (messages are still answered); `npx wrangler deploy` puts it back |
+| Move back to your computer | `npx wrangler delete`, then in the project folder `python telegram_setup.py --delete-webhook`, then start the Python bot |
+
+## 10. All Telegram commands
 
 The commands also appear in the bot's **menu** button in Telegram.
 
@@ -278,7 +395,7 @@ The bot speaks **Persian (fa), English (en), French (fr) and German (de)**. New 
 
 The language you *search* in doesn't matter: every item is searched in German, French, Italian and English, because listings on these sites are written in those languages.
 
-## 10. Sharing the bot with friends
+## 11. Sharing the bot with friends
 
 Your bot can serve your friends and family too. Each person has their **own** language, area, wish list and price ranges.
 
@@ -292,7 +409,7 @@ Things to know:
 - **Finding someone's chat id:** your own is saved by `telegram_setup.py`. A friend can find theirs by sending a message to a bot such as [@userinfobot](https://t.me/userinfobot). Chat ids are also stored in `bot.db` (table `users`) once someone has written to your bot.
 - If someone blocks the bot, it stops sending to them automatically.
 
-## 11. How it works
+## 12. How it works
 
 - **`bot.py`** keeps running. It answers Telegram messages and, in the background, checks each user whose last check is more than 2 hours old. Requests like `/check`, a new area or a new item go to the front of the queue. Users with the same area and search word share one search.
 - **anibis.ch and tutti.ch** run on the same platform. The bot reads their search pages filtered by your area, newest first: up to 5 pages for free items and 2 pages per search word (3 the first time).
@@ -301,11 +418,16 @@ Things to know:
 - **Translation** uses Google Translate's free web endpoint, with MyMemory as a fallback. If both fail, the item is searched exactly as you typed it.
 - **Everything is stored in `bot.db`**, a SQLite database in the project folder: users, their language, area, sites, wish lists, price ranges, and which listings were already seen and sent.
 
-## 12. Files
+## 13. Files
 
 | File | Purpose |
 |---|---|
 | `bot.py` | The Telegram bot: users, commands, the 2-hour checks. **Start this.** |
+| `cloudflare/` | The same bot as a Cloudflare Worker: `src/` (code), `wrangler.toml` (settings), `test/` (offline test). |
+| `cloudflare/src/texts.json` | The bot's messages for the Worker, made from `texts.py` by `cloudflare/scripts/export_texts.py`. |
+| `linux/install_service.sh` / `linux/remove_service.sh` | Run the bot as a systemd service on Linux. |
+| `tools/export_to_d1.py` | Copies users and lists from `bot.db` to the Cloudflare database. |
+| `tests/fixtures/` | Saved anibis.ch and ricardo.ch search pages, used by the tests. |
 | `main.py` | Starts `bot.py`. This is what the Windows scheduled task runs. |
 | `anibis.py` | Searches anibis.ch and tutti.ch and finds location options. |
 | `ricardo.py` | Searches ricardo.ch. |
@@ -313,7 +435,7 @@ Things to know:
 | `translate.py` | Translates wish-list items into search words. |
 | `texts.py` | All bot messages in the four languages. |
 | `anibis_alert.py` | Writes the log file (and contains the older one-shot version of the alert). |
-| `telegram_setup.py` | One-time check of the token; saves your chat id. |
+| `telegram_setup.py` | One-time check of the token; saves your chat id. `--delete-webhook` disconnects the Cloudflare version. |
 | `config.example.json` | Template for `config.json`. |
 | `ch_postcodes.txt` | Swiss postcode list from GeoNames. |
 | `install_schedule.bat` / `install_schedule.ps1` | Create the Windows scheduled task. |
@@ -328,22 +450,26 @@ Created when you use it (all ignored by git):
 | `bot.db` | The database with all users and their settings. **Private.** |
 | `anibis_alert.log` | What the bot did, including errors. Look here first if something seems wrong. |
 
-## 13. Privacy: never commit config.json or bot.db
+## 14. Privacy: never commit config.json or bot.db
 
 - `config.json` contains your **bot token**. Anyone with it can take over your bot.
 - `bot.db` contains **every user's chat id, name, area and wish list**.
 - `anibis_alert.log` contains chat ids too.
 
-All three are listed in `.gitignore`, so `git add .` skips them. Keep it that way: don't remove them from `.gitignore`, and don't force-add them. Before pushing, `git status` should never show them.
+All three are listed in `.gitignore`, so `git add .` skips them. So are `d1_import.sql` (made by `tools/export_to_d1.py`) and `cloudflare/.dev.vars`. On Cloudflare the token is stored with `wrangler secret put`, never in `wrangler.toml`. Keep it that way: don't remove them from `.gitignore`, and don't force-add them. Before pushing, `git status` should never show them.
 
 If you ever push your token by mistake, revoke it immediately in @BotFather (`/revoke`), even if you delete the commit afterwards.
 
-## 14. Troubleshooting
+## 15. Troubleshooting
 
 | Problem | What to do |
 |---|---|
 | The bot doesn't answer | Make sure it's running (a terminal with `python bot.py`, or the scheduled task). Then look at `anibis_alert.log`. |
 | `Put your telegram_bot_token in config.json first.` | `config.json` is missing or still has the placeholder token. See [step 4](#4-create-configjson). |
+| `This bot is connected to a webhook…` in the log | The Cloudflare version is answering this bot. Only one copy can. To run it on your computer instead: `python telegram_setup.py --delete-webhook` (and `npx wrangler delete` in `cloudflare/`). |
+| Cloudflare: the bot doesn't answer | Open `https://<your worker>/setup` and look for ❌. Then `npx wrangler tail` in `cloudflare/` and send the bot a message to see errors. |
+| Cloudflare: `TELEGRAM_BOT_TOKEN is not set` | Run `npx wrangler secret put TELEGRAM_BOT_TOKEN` in `cloudflare/`. |
+| Cloudflare: `running scripts is disabled on this system` (PowerShell) | Use Command Prompt (`cmd`) instead of PowerShell for the `npm` / `npx` commands. |
 | `bot is already running, exiting` in the log | Normal: a copy is already running, so the new one stops. To restart after changing files, stop the old copy first (close its window, or run `remove_schedule.bat` and then `install_schedule.bat`). If a copy you started by hand is still running, end `pythonw.exe` / `python.exe` in Task Manager. |
 | `'python' is not recognized…` | Python isn't on PATH. Reinstall it and tick **Add Python to PATH**, or try `py bot.py`. |
 | The bot can't find my town | Write it as Anibis spells it (`Geneve`, `Zurich`, `Biel`), or use the canton name. |

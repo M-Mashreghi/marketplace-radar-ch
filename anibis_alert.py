@@ -23,6 +23,7 @@ import builtins
 import datetime
 import html
 import json
+import os
 import re
 import sys
 import time
@@ -33,7 +34,10 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 CONFIG_FILE = HERE / "config.json"
 SEEN_FILE = HERE / "seen_ids.json"
-LOG_FILE = HERE / "anibis_alert.log"
+# Where bot.db and the log are kept: this folder, unless DATA_DIR is set.
+DATA_DIR = Path(os.environ.get("DATA_DIR") or HERE).expanduser().resolve()
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+LOG_FILE = DATA_DIR / "anibis_alert.log"
 
 
 def print(*args, **kwargs):

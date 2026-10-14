@@ -1,0 +1,24 @@
+# Cloudflare Worker for marketplace-radar-ch. See README.md, "Run it on Cloudflare".
+name = "marketplace-radar-ch"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+
+# Every minute: do waiting /check requests, new areas and new items, then the
+# users whose 2-hourly check is due.
+[triggers]
+crons = ["* * * * *"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "marketplace-radar"
+database_id = "PASTE_YOUR_DATABASE_ID_HERE"   # from: npx wrangler d1 create marketplace-radar
+
+[vars]
+# Who may use the bot: Telegram chat ids, comma separated. Empty = everyone.
+ALLOWED_CHAT_IDS = ""
+
+# The bot token is a secret, never put it in this file:
+#   npx wrangler secret put TELEGRAM_BOT_TOKEN
+
+[observability]
+enabled = true

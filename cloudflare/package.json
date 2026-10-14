@@ -1,0 +1,13 @@
+{
+  "name": "marketplace-radar-ch-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "logs": "wrangler tail",
+    "test": "wrangler deploy --dry-run --outdir dist && node test/run.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "^4.40.0"
+  }
+}

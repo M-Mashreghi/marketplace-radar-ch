@@ -6,3 +6,9 @@ bot_state.json
 bot_state.tmp
 bot.db
 bot.db-journal
+# Cloudflare Worker
+cloudflare/node_modules/
+cloudflare/dist/
+cloudflare/.wrangler/
+cloudflare/.dev.vars
+d1_import.sql
