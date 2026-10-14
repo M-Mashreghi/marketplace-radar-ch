@@ -1,12 +1,17 @@
 """Finish the Telegram setup: finds your chat id and sends a test message.
 
 Steps:
-  1. Paste your bot token into config.json ("telegram_bot_token").
+  1. Paste your bot token into config.json ("telegram_bot_token"),
+     or set the TELEGRAM_BOT_TOKEN environment variable.
   2. In Telegram, open your bot and send it any message (e.g. "hi").
   3. Run:  python telegram_setup.py
 The chat id is saved into config.json. Nothing secret is printed.
+
+Moving the bot back from Cloudflare to your own computer:
+     python telegram_setup.py --delete-webhook
 """
 import json
+import os
 import sys
 import urllib.error
 import urllib.parse
@@ -27,8 +32,8 @@ def api(token, method, params=None):
 
 
 def main():
-    cfg = json.loads(CONFIG.read_text(encoding="utf-8"))
-    token = cfg.get("telegram_bot_token", "").strip()
+    cfg = json.loads(CONFIG.read_text(encoding="utf-8-sig")) if CONFIG.exists() else {}
+    token = (os.environ.get("TELEGRAM_BOT_TOKEN") or cfg.get("telegram_bot_token", "")).strip()
     if not token or token.startswith("PASTE_"):
         sys.exit("Put your bot token in config.json first.")
 
@@ -37,18 +42,35 @@ def main():
         sys.exit("Telegram rejected the token. Check it in config.json.")
     print(f"Token OK, bot is @{me['result']['username']}")
 
-    if not cfg.get("telegram_chat_id"):
+    hook = api(token, "getWebhookInfo").get("result", {}).get("url")
+    if "--delete-webhook" in sys.argv:
+        if hook:
+            api(token, "deleteWebhook")
+            print(f"Webhook {hook} removed. The bot can now run on this computer (python bot.py).")
+            print("Also stop the Cloudflare Worker (npx wrangler delete), or it will connect itself again "
+                  "the next time someone opens its /setup page.")
+        else:
+            print("No webhook was set; nothing to do.")
+        return
+    if hook:
+        print(f"Note: the bot is connected to {hook} (the Cloudflare version), so it can't read "
+              "messages here. Your chat id can't be looked up while that is so.")
+
+    if not cfg.get("telegram_chat_id") and not hook:
         updates = api(token, "getUpdates").get("result", [])
         chats = [u["message"]["chat"]["id"] for u in updates if "message" in u]
         if not chats:
             sys.exit("No messages found. Send your bot a message in Telegram, then run this again.")
         cfg["telegram_chat_id"] = str(chats[-1])
+        cfg.setdefault("telegram_bot_token", token)
         CONFIG.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
         print("Chat id found and saved to config.json")
+    if not cfg.get("telegram_chat_id"):
+        return
 
     sent = api(token, "sendMessage", {
         "chat_id": cfg["telegram_chat_id"],
-        "text": "Anibis alarm is connected. New listings will show up here.",
+        "text": "Marketplace radar is connected. New listings will show up here.",
     })
     if sent.get("ok"):
         print("Test message sent. Check Telegram!")

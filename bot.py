@@ -11,15 +11,19 @@ with photo, price, place, description and link:
 
 Everything is stored in bot.db (SQLite) in this folder.
 
-Start:  python bot.py   (main.py / sada.py also start it, for Task Scheduler)
-Needs:  telegram_bot_token in config.json. Optional in config.json:
-        "allowed_chat_ids": ["123", ...] to limit who may use the bot.
-Only uses the Python standard library.
+Start:  python bot.py   (main.py also starts it, for Task Scheduler / systemd)
+Needs:  telegram_bot_token in config.json, or the TELEGRAM_BOT_TOKEN
+        environment variable. Optional: "allowed_chat_ids": ["123", ...] in
+        config.json (or ALLOWED_CHAT_IDS=123,456) to limit who may use the bot,
+        and DATA_DIR to keep bot.db and the log somewhere else.
+Runs on Windows, Linux and macOS. Only uses the Python standard library.
+The Cloudflare version of the bot is in the cloudflare/ folder.
 """
 
 import difflib
 import html
 import json
+import os
 import queue
 import re
 import socket
@@ -36,6 +40,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
+from anibis_alert import DATA_DIR  # noqa: E402
 import anibis  # noqa: E402
 import geo  # noqa: E402
 import ricardo  # noqa: E402
@@ -44,7 +49,7 @@ from anibis_alert import print  # noqa: E402,A001  (console + anibis_alert.log)
 from texts import LANGS, t  # noqa: E402
 
 CONFIG_FILE = HERE / "config.json"
-DB_FILE = HERE / "bot.db"
+DB_FILE = DATA_DIR / "bot.db"
 CHECK_EVERY_HOURS = 2
 MAX_WISHES = 20
 MAX_ALERTS_PER_CHECK = 50   # new listings per user per check, so a broken page can't flood anyone
@@ -809,7 +814,7 @@ def handle_text(tg, db, jobs, user, text):
     elif cmd == "/free":
         db.set(chat, free_on=0 if user["free_on"] else 1)
         if user["free_on"]:
-            db.x("DELETE FROM seen WHERE chat_id=? AND search_key='free'", (chat,))
+            db.x("DELETE FROM seen WHERE chat_id=? AND search_key LIKE 'free@%'", (chat,))
         tg.send(chat, t("free_toggled", lang, state=t("off" if user["free_on"] else "on", lang)))
     elif cmd == "/check":
         if not user["loc_id"]:
@@ -906,6 +911,17 @@ def handle_button(tg, db, jobs, user, cb):
 
 # ------------------------------------------------------------------ main loop
 
+def load_config():
+    """config.json, with environment variables taking precedence (handy on
+    Linux servers, in systemd units and containers)."""
+    cfg = json.loads(CONFIG_FILE.read_text(encoding="utf-8-sig")) if CONFIG_FILE.exists() else {}
+    if os.environ.get("TELEGRAM_BOT_TOKEN"):
+        cfg["telegram_bot_token"] = os.environ["TELEGRAM_BOT_TOKEN"]
+    if os.environ.get("ALLOWED_CHAT_IDS"):
+        cfg["allowed_chat_ids"] = re.split(r"[,\s]+", os.environ["ALLOWED_CHAT_IDS"])
+    return cfg
+
+
 def handle_update(tg, db, jobs, chat, cb, msg, lock):
     with lock:
         user = db.user(chat)
@@ -926,14 +942,24 @@ def main():
         print("bot is already running, exiting")
         return
 
-    cfg = json.loads(CONFIG_FILE.read_text(encoding="utf-8")) if CONFIG_FILE.exists() else {}
+    cfg = load_config()
     token = str(cfg.get("telegram_bot_token", "")).strip()
     if not token or "PASTE" in token or "PUT-YOUR" in token:
-        print("[!] Put your telegram_bot_token in config.json first.")
+        print("[!] Put your telegram_bot_token in config.json (or set TELEGRAM_BOT_TOKEN) first.")
         sys.exit(1)
-    allowed = {str(x) for x in cfg.get("allowed_chat_ids") or []}
+    allowed = {str(x).strip() for x in cfg.get("allowed_chat_ids") or [] if str(x).strip()}
 
     tg = Telegram(token)
+    try:  # a webhook means the Cloudflare version is answering this bot
+        hook = tg.call("getWebhookInfo").get("url")
+    except Exception as e:
+        hook = None
+        print(f"[!] getWebhookInfo: {e}")
+    if hook:
+        print(f"[!] This bot is connected to a webhook ({hook}), probably the Cloudflare version. "
+              "Only one copy can answer a bot. To run it here instead, first run: "
+              "python telegram_setup.py --delete-webhook")
+        sys.exit(1)
     db = DB(DB_FILE)
     jobs = queue.Queue()
     workers = ThreadPoolExecutor(max_workers=4)
