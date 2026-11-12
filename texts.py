@@ -57,26 +57,26 @@ T = {
     "listings_count": {"fa": "{n} آگهی", "en": "{n} listings", "fr": "{n} annonces", "de": "{n} Inserate"},
     "region_saved": {
         "fa": "✅ منطقه: <b>{label}</b>\n⏳ دارم Anibis، tutti و Ricardo رو بررسی می‌کنم، گزارشش الان میاد.\n\nهر {hours} ساعت آگهی‌های جدید رو می‌فرستم.\n"
-              "🎁 آگهی‌های رایگان: {free}\n➕ برای اضافه کردن چیزی که می‌خوای، فقط اسمش رو بفرست (به هر زبانی) یا /add\nℹ️ راهنما: /help",
+              "🎁 آگهی‌های رایگان: {free}\n📍 برای اضافه کردن یه منطقه‌ی دیگه: /region\n➕ برای اضافه کردن چیزی که می‌خوای، فقط اسمش رو بفرست (به هر زبانی) یا /add\nℹ️ راهنما: /help",
         "en": "✅ Area: <b>{label}</b>\n⏳ Checking Anibis, tutti and Ricardo now, a report follows.\n\nI'll send new listings every {hours} hours.\n"
-              "🎁 Free items: {free}\n➕ To add something you want, just send its name (any language) or use /add\nℹ️ Help: /help",
+              "🎁 Free items: {free}\n📍 To follow another area too: /region\n➕ To add something you want, just send its name (any language) or use /add\nℹ️ Help: /help",
         "fr": "✅ Zone : <b>{label}</b>\n⏳ Je vérifie Anibis, tutti et Ricardo, un rapport suit.\n\nJ'enverrai les nouvelles annonces toutes les {hours} heures.\n"
-              "🎁 Objets gratuits : {free}\n➕ Pour ajouter ce que tu cherches, envoie simplement son nom (n'importe quelle langue) ou /add\nℹ️ Aide : /help",
+              "🎁 Objets gratuits : {free}\n📍 Pour suivre aussi une autre zone : /region\n➕ Pour ajouter ce que tu cherches, envoie simplement son nom (n'importe quelle langue) ou /add\nℹ️ Aide : /help",
         "de": "✅ Gebiet: <b>{label}</b>\n⏳ Ich prüfe jetzt Anibis, tutti und Ricardo, ein Bericht folgt.\n\nIch schicke dir alle {hours} Stunden neue Inserate.\n"
-              "🎁 Gratis-Sachen: {free}\n➕ Um etwas hinzuzufügen, schick einfach den Namen (jede Sprache) oder /add\nℹ️ Hilfe: /help",
+              "🎁 Gratis-Sachen: {free}\n📍 Um noch ein Gebiet zu verfolgen: /region\n➕ Um etwas hinzuzufügen, schick einfach den Namen (jede Sprache) oder /add\nℹ️ Hilfe: /help",
     },
     "help": {
         "fa": "دستورها:\n/add &lt;چیز&gt; – اضافه کردن چیزی که می‌خوای (مثلاً /add دوچرخه)\n/list – لیست و تنظیمات (حذف با دکمه)\n"
-              "/free – روشن/خاموش کردن آگهی‌های رایگان\n/check – همین الان بگرد\n/region – عوض کردن منطقه\n/language – عوض کردن زبان\n/sites – انتخاب سایت‌ها (Anibis، tutti، Ricardo)\n/price – تعیین یا تغییر حداقل و حداکثر قیمت\n/stop – توقف همه‌ی هشدارها\n\n"
+              "/free – روشن/خاموش کردن آگهی‌های رایگان\n/check – همین الان بگرد\n/region – منطقه‌هات (اضافه یا حذف، تا ۵ جا)\n/language – عوض کردن زبان\n/sites – انتخاب سایت‌ها (Anibis، tutti، Ricardo)\n/price – تعیین یا تغییر حداقل و حداکثر قیمت\n/stop – توقف همه‌ی هشدارها\n\n"
               "می‌تونی فقط اسم چیزی که می‌خوای رو بفرستی؛ خودم به آلمانی، فرانسوی، ایتالیایی و انگلیسی ترجمه‌اش می‌کنم و در Anibis، tutti و Ricardo می‌گردم.",
         "en": "Commands:\n/add &lt;item&gt; – watch for something (e.g. /add bike)\n/list – your list and settings (remove with buttons)\n"
-              "/free – free-item alerts on/off\n/check – search now\n/region – change area\n/language – change language\n/sites – choose sites (Anibis, tutti, Ricardo)\n/price – set or change min and max price\n/stop – stop all alerts\n\n"
+              "/free – free-item alerts on/off\n/check – search now\n/region – your areas (add or remove, up to 5)\n/language – change language\n/sites – choose sites (Anibis, tutti, Ricardo)\n/price – set or change min and max price\n/stop – stop all alerts\n\n"
               "You can also just send the name of what you want. I translate it to German, French, Italian and English and search Anibis, tutti and Ricardo for all of them.",
         "fr": "Commandes :\n/add &lt;objet&gt; – surveiller un objet (p. ex. /add vélo)\n/list – ta liste et tes réglages (supprimer avec les boutons)\n"
-              "/free – alertes objets gratuits on/off\n/check – chercher maintenant\n/region – changer de zone\n/language – changer de langue\n/sites – choisir les sites (Anibis, tutti, Ricardo)\n/price – prix minimum et maximum\n/stop – arrêter toutes les alertes\n\n"
+              "/free – alertes objets gratuits on/off\n/check – chercher maintenant\n/region – tes zones (ajouter ou supprimer, jusqu'à 5)\n/language – changer de langue\n/sites – choisir les sites (Anibis, tutti, Ricardo)\n/price – prix minimum et maximum\n/stop – arrêter toutes les alertes\n\n"
               "Tu peux aussi envoyer juste le nom de ce que tu cherches. Je le traduis en allemand, français, italien et anglais et je cherche sur Anibis, tutti et Ricardo.",
         "de": "Befehle:\n/add &lt;Sache&gt; – nach etwas suchen (z. B. /add Velo)\n/list – deine Liste und Einstellungen (mit Knöpfen löschen)\n"
-              "/free – Gratis-Alarme ein/aus\n/check – jetzt suchen\n/region – Gebiet ändern\n/language – Sprache ändern\n/sites – Seiten wählen (Anibis, tutti, Ricardo)\n/price – Mindest- und Höchstpreis\n/stop – alle Alarme stoppen\n\n"
+              "/free – Gratis-Alarme ein/aus\n/check – jetzt suchen\n/region – deine Gebiete (hinzufügen oder löschen, bis 5)\n/language – Sprache ändern\n/sites – Seiten wählen (Anibis, tutti, Ricardo)\n/price – Mindest- und Höchstpreis\n/stop – alle Alarme stoppen\n\n"
               "Du kannst auch einfach den Namen schicken. Ich übersetze ihn auf Deutsch, Französisch, Italienisch und Englisch und suche auf Anibis, tutti und Ricardo.",
     },
     "need_region": {
@@ -306,6 +306,27 @@ T = {
               "Note : Ricardo n'est utilisé que pour ta liste de souhaits, dans toute la Suisse (Ricardo n'autorise pas les robots à filtrer par zone et n'a pas d'annonces gratuites).",
         "de": "Auf welchen Seiten soll ich suchen? Tipp auf eine Seite, um sie ein- oder auszuschalten.\n\n"
               "Hinweis: Ricardo wird nur für deine Wunschliste durchsucht, in der ganzen Schweiz (Ricardo erlaubt Bots keinen Ortsfilter und hat keine Gratis-Inserate).",
+    },
+    "areas": {
+        "fa": "📍 منطقه‌هایی که دنبال می‌کنی:\n{items}\n\nهمه‌ی هشدارها (رایگان‌ها و چیزهایی که می‌خوای) توی همه‌ی این منطقه‌ها جستجو می‌شن.\n➕ اضافه کردن · 🗑 حذف",
+        "en": "📍 Areas you follow:\n{items}\n\nAll your alerts (free items and your list) are searched in every one of them.\n➕ add · 🗑 remove",
+        "fr": "📍 Zones que tu suis :\n{items}\n\nToutes tes alertes (objets gratuits et ta liste) sont cherchées dans chacune.\n➕ ajouter · 🗑 supprimer",
+        "de": "📍 Gebiete, denen du folgst:\n{items}\n\nAlle deine Alarme (Gratis-Sachen und deine Liste) werden in jedem davon gesucht.\n➕ hinzufügen · 🗑 löschen",
+    },
+    "area_add": {"fa": "➕ یه منطقه‌ی دیگه", "en": "➕ Add an area", "fr": "➕ Ajouter une zone", "de": "➕ Gebiet hinzufügen"},
+    "area_removed": {
+        "fa": "🗑 منطقه‌ی «{label}» حذف شد.", "en": "🗑 Removed the area “{label}”.",
+        "fr": "🗑 Zone « {label} » supprimée.", "de": "🗑 Gebiet „{label}“ gelöscht.",
+    },
+    "area_max": {
+        "fa": "حداکثر {n} منطقه می‌تونی داشته باشی. اول یکی رو حذف کن: /region",
+        "en": "You can follow at most {n} areas. Remove one first: /region",
+        "fr": "Tu peux suivre au plus {n} zones. Supprimes-en une d'abord : /region",
+        "de": "Du kannst höchstens {n} Gebiete verfolgen. Lösch zuerst eins: /region",
+    },
+    "area_dup": {
+        "fa": "«{label}» از قبل توی منطقه‌هاته.", "en": "You already follow “{label}”.",
+        "fr": "Tu suis déjà « {label} ».", "de": "Du folgst „{label}“ schon.",
     },
     "match": {"fa": "🔎 برای: {what}", "en": "🔎 For: {what}", "fr": "🔎 Pour : {what}", "de": "🔎 Für: {what}"},
 }
