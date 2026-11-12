@@ -441,6 +441,14 @@ export async function checkUser(tg, db, user, report = null, cache = new Map(), 
     }
   }
   await db.set(chat, { last_check: now() });
+  if (report === "auto" && !sent) {
+    // A 2-hourly check that found nothing new stays quiet. If a site failed
+    // (they often refuse Cloudflare's servers), say so at most once a day.
+    const failed = rows.some(([, siteRows]) => siteRows.some((r) => r.status === "error"));
+    const key = `errnote:${chat}`;
+    if (!failed || now() - Number(await db.meta(key, 0)) < 86400) report = null;
+    else await db.setMeta(key, now());
+  }
   if (report) {
     try {
       await tg.send(chat, buildReport(await db.user(chat), rows, sent, report, area));

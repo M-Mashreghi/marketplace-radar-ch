@@ -17,6 +17,7 @@ const CHAT = 4242;
 const WORDS = { de: "Velo", fr: "vélo", it: "bicicletta", en: "bicycle" };
 const calls = []; // Telegram API calls the Worker made
 const fetched = []; // other URLs it fetched
+let blocked = false; // answer the marketplaces with 403, as they do to Cloudflare
 
 function telegram(method, body) {
   calls.push({ method, body });
@@ -41,6 +42,7 @@ async function outbound(request) {
     return telegram(url.pathname.split("/").pop(), await request.json());
   }
   fetched.push(url.href);
+  if (blocked && url.hostname !== "translate.googleapis.com") return new Response("Forbidden", { status: 403, statusText: "Forbidden" });
   if (url.hostname === "www.anibis.ch" || url.hostname === "www.tutti.ch") {
     const loc = locality(url);
     // The fixture is the Lausanne town page; Anibis knows other ids only as "Lausanne" region/canton Vaud.
@@ -165,10 +167,23 @@ try {
   const d1 = await mf.getD1Database("DB");
   await d1.prepare("UPDATE users SET last_check = last_check - 7300").run();
   const n3 = sent().length;
+  const before = fetched.length;
+  const fetchedBefore = () => before;
   await cron();
-  assert.match(sent().at(-1).body.text, /Sent 0 new listings/);
+  assert.equal(sent().length, n3, "nothing new: no message");
+  assert.ok(fetched.length > fetchedBefore(), "but the sites were searched");
+  ok("the 2-hourly check runs when it is due and stays quiet when nothing is new");
+
+  blocked = true; // the sites refuse Cloudflare's servers
+  await d1.prepare("UPDATE users SET last_check = last_check - 7300").run();
+  await cron();
   assert.equal(sent().length, n3 + 1);
-  ok("the 2-hourly check runs when it is due");
+  assert.match(sent().at(-1).body.text, /HTTP Error 403/);
+  await d1.prepare("UPDATE users SET last_check = last_check - 7300").run();
+  await cron();
+  assert.equal(sent().length, n3 + 1, "the error report is sent at most once a day");
+  blocked = false;
+  ok("when the sites block the Worker, the user hears about it once a day, not every 2 hours");
 
   await say("/list");
   assert.match(lastText(), /velo · 💰 20–500 CHF/);
