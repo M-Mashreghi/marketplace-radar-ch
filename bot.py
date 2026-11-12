@@ -1,9 +1,10 @@
 """
 Anibis / tutti / Ricardo Telegram bot – many users, four languages.
 
-Each user picks a language (Persian, English, French, German), an area on
-Anibis (town, town + radius, region or canton) and the things they want.
-Every 2 hours the bot searches Anibis for each user and sends new listings
+Each user picks a language (Persian, English, French, German), one or more
+areas on Anibis (town, town + radius, region or canton; up to 5) and the
+things they want. Every 2 hours the bot searches every area for each user and
+sends new listings
 with photo, price, place, description and link:
   * new FREE listings in their area (can be turned off with /free)
   * new listings for each item on their list; the item is translated to
@@ -11,15 +12,18 @@ with photo, price, place, description and link:
 
 Everything is stored in bot.db (SQLite) in this folder.
 
-Start:  python bot.py   (main.py / sada.py also start it, for Task Scheduler)
-Needs:  telegram_bot_token in config.json. Optional in config.json:
-        "allowed_chat_ids": ["123", ...] to limit who may use the bot.
-Only uses the Python standard library.
+Start:  python bot.py   (main.py also starts it, for Task Scheduler / systemd)
+Needs:  telegram_bot_token in config.json, or the TELEGRAM_BOT_TOKEN
+        environment variable. Optional: "allowed_chat_ids": ["123", ...] in
+        config.json (or ALLOWED_CHAT_IDS=123,456) to limit who may use the bot,
+        and DATA_DIR to keep bot.db and the log somewhere else.
+Runs on Windows, Linux and macOS. Only uses the Python standard library.
 """
 
 import difflib
 import html
 import json
+import os
 import queue
 import re
 import socket
@@ -36,6 +40,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
+from anibis_alert import DATA_DIR  # noqa: E402
 import anibis  # noqa: E402
 import geo  # noqa: E402
 import ricardo  # noqa: E402
@@ -44,9 +49,10 @@ from anibis_alert import print  # noqa: E402,A001  (console + anibis_alert.log)
 from texts import LANGS, t  # noqa: E402
 
 CONFIG_FILE = HERE / "config.json"
-DB_FILE = HERE / "bot.db"
+DB_FILE = DATA_DIR / "bot.db"
 CHECK_EVERY_HOURS = 2
 MAX_WISHES = 20
+MAX_AREAS = 5               # places one user can follow at once
 MAX_ALERTS_PER_CHECK = 50   # new listings per user per check, so a broken page can't flood anyone
 FIRST_MAX = 100             # "everything listed now" for a new area or item, per search
 FREE_PAGES = 5              # free items: read up to 5 pages (~150 listings) per check
@@ -100,6 +106,15 @@ class DB:
                 PRIMARY KEY (chat_id, listing_id)
             );
             CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
+            CREATE TABLE IF NOT EXISTS areas (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                chat_id      TEXT,
+                loc_id       TEXT,
+                loc_radius   INTEGER,
+                loc_label    TEXT,
+                ricardo_area TEXT,
+                created      REAL
+            );
             """)
             cols = [r[1] for r in self.con.execute("PRAGMA table_info(users)")]
             if "sites" not in cols:
@@ -112,6 +127,16 @@ class DB:
             for col in ("min_price", "max_price"):
                 if col not in wcols:
                     self.con.execute(f"ALTER TABLE wishes ADD COLUMN {col} REAL")
+            # Older versions had one area per user, in the users table. Move it
+            # to `areas`, and give its "seen" rows the area's id, so nothing is
+            # sent again.
+            for u in self.con.execute("SELECT * FROM users WHERE loc_id IS NOT NULL AND chat_id NOT IN "
+                                      "(SELECT chat_id FROM areas)").fetchall():
+                cur = self.con.execute(
+                    "INSERT INTO areas (chat_id, loc_id, loc_radius, loc_label, ricardo_area, created) VALUES (?,?,?,?,?,?)",
+                    (u["chat_id"], u["loc_id"], u["loc_radius"], u["loc_label"], u["ricardo_area"], time.time()))
+                self.con.execute("UPDATE seen SET search_key = search_key || '#' || ? WHERE chat_id=? "
+                                 "AND search_key NOT LIKE '%#%'", (cur.lastrowid, u["chat_id"]))
 
     def q(self, sql, args=()):
         with self.lock:
@@ -144,6 +169,33 @@ class DB:
 
     def set_pending(self, chat_id, data):
         self.set(chat_id, pending=json.dumps(data, ensure_ascii=False) if data else None)
+
+    # areas: users.loc_id / loc_label mirror them (first area / all names),
+    # so "has an area" and the labels in messages stay simple.
+    def areas(self, chat_id):
+        return [dict(r) for r in self.q("SELECT * FROM areas WHERE chat_id=? ORDER BY id", (chat_id,))]
+
+    def add_area(self, chat_id, loc_id, radius, label):
+        cur = self.x("INSERT INTO areas (chat_id, loc_id, loc_radius, loc_label, created) VALUES (?,?,?,?,?)",
+                     (chat_id, loc_id, radius, label, time.time()))
+        self._sync_areas(chat_id)
+        return cur.lastrowid
+
+    def del_area(self, chat_id, area_id):
+        rows = self.q("SELECT loc_label FROM areas WHERE chat_id=? AND id=?", (chat_id, area_id))
+        self.x("DELETE FROM areas WHERE chat_id=? AND id=?", (chat_id, area_id))
+        self.x("DELETE FROM seen WHERE chat_id=? AND search_key LIKE ?", (chat_id, f"%#{area_id}"))
+        self._sync_areas(chat_id)
+        return rows[0]["loc_label"] if rows else None
+
+    def set_area_ricardo(self, area_id, value):
+        self.x("UPDATE areas SET ricardo_area=? WHERE id=?", (value, area_id))
+
+    def _sync_areas(self, chat_id):
+        areas = self.areas(chat_id)
+        first = areas[0] if areas else {}
+        self.set(chat_id, loc_id=first.get("loc_id"), loc_radius=first.get("loc_radius"),
+                 loc_label=" + ".join(a["loc_label"] for a in areas) or None)
 
     # wishes
     def wishes(self, chat_id):
@@ -185,9 +237,6 @@ class DB:
 
     def mark_sent(self, chat_id, listing_id):
         self.x("INSERT OR IGNORE INTO sent VALUES (?,?,?)", (chat_id, listing_id, time.time()))
-
-    def reset_searches(self, chat_id):
-        self.x("DELETE FROM seen WHERE chat_id=?", (chat_id,))
 
     # meta
     def meta(self, key, default=None):
@@ -407,37 +456,39 @@ def search_words(terms, similar):
     return out
 
 
-def ricardo_area(db, user):
-    """Where the user's area is, for keeping Ricardo results by seller postcode."""
-    if user.get("ricardo_area"):
+def ricardo_area(db, area):
+    """Where one of the user's areas is, for keeping Ricardo results by seller postcode."""
+    if area.get("ricardo_area"):
         try:
-            return json.loads(user["ricardo_area"])
+            return json.loads(area["ricardo_area"])
         except ValueError:
             pass
-    kind = (user["loc_id"] or "").split("-")[1] if (user["loc_id"] or "").count("-") >= 2 else "city"
-    name = (user["loc_id"] or "").split("-", 2)[-1]
-    listings = anibis.search_new(None, user["loc_id"], user["loc_radius"], set(), 3, site="anibis")
-    area = geo.make_area(kind, name, user["loc_radius"], listings)
-    if area.get("lat") or area.get("zips"):
-        db.set(user["chat_id"], ricardo_area=json.dumps(area))
-        return area
+    loc = area["loc_id"] or ""
+    kind = loc.split("-")[1] if loc.count("-") >= 2 else "city"
+    name = loc.split("-", 2)[-1]
+    listings = anibis.search_new(None, loc, area["loc_radius"], set(), 3, site="anibis")
+    found = geo.make_area(kind, name, area["loc_radius"], listings)
+    if found.get("lat") or found.get("zips"):
+        db.set_area_ricardo(area["id"], json.dumps(found))
+        return found
     return None
 
 
 def run_search(site, term, user, seen, pages, first_time, cache, area=None):
-    """One word on one site -> {"items", "places", "all"}.
+    """One word on one site in one area -> {"items", "places", "all"}.
 
+    user: anything with loc_id and loc_radius (one of the user's areas).
     first_time: everything listed now (several pages); otherwise only new ones.
     Ricardo has no area filter on the site, so its results (all of Switzerland)
-    are kept only when the seller's postcode is in the user's area.
+    are kept only when the seller's postcode is in the area.
     """
     ck = (site, term, user["loc_id"], user["loc_radius"], first_time, pages)
     if site == "ricardo":
-        if ck not in cache:
-            items = ricardo.search(term)
-            kept = [i for i in items if geo.in_area(area, i.get("postcode"))] if area else items
-            cache[ck] = {"items": kept, "places": None, "all": len(items)}
-        return cache[ck]
+        if ("ricardo", term) not in cache:  # one search serves every area
+            cache[("ricardo", term)] = ricardo.search(term)
+        items = cache[("ricardo", term)]
+        kept = [i for i in items if geo.in_area(area, i.get("postcode"))] if area else items
+        return {"items": kept, "places": None, "all": len(items)}
     if ck in cache:
         return cache[ck]
     if first_time:
@@ -481,7 +532,7 @@ def site_link(site, url):
     return f'<a href="{html.escape(url)}">{SITE_NAMES[site]}</a>'
 
 
-def build_report(user, rows, sent, kind, area=None):
+def build_report(user, rows, sent, kind, ric_areas=None):
     """One message: what happened on every site for every search."""
     lang = user["lang"] or "en"
     lines = [t("rep_head_" + kind, lang, label=esc(user["loc_label"]))]
@@ -498,8 +549,9 @@ def build_report(user, rows, sent, kind, area=None):
                 lines.append(t("rep_err", lang, site=name, err=esc(r["err"])[:120]))
             else:
                 if r["site"] == "ricardo":
-                    where = (t("rep_ric_area", lang, label=esc(user["loc_label"]), d=geo.describe(area),
-                               all=r.get("all") or 0) if area else t("rep_all_ch", lang))
+                    where = (t("rep_ric_area", lang, label=esc(user["loc_label"]),
+                               d=", ".join(geo.describe(a) for a in ric_areas), all=r.get("all") or 0)
+                             if ric_areas else t("rep_all_ch", lang))
                 elif r["places"] is not None and not r["places"]:
                     where = t("rep_noloc", lang)
                 else:
@@ -529,16 +581,21 @@ def check_user(tg, db, user, report=None, cache=None, only=None):
     Returns number of listings sent.
     """
     chat, lang = user["chat_id"], user["lang"] or "en"
-    if not user["loc_id"]:
+    areas = db.areas(chat)
+    if not areas:
         return 0
     cache = {} if cache is None else cache
     sites = user_sites(user)
-    area = None
     if "ricardo" in sites:
-        try:
-            area = ricardo_area(db, user)
-        except Exception as e:
-            print(f"[!] Ricardo area for {chat} failed: {e}")
+        for a in areas:
+            try:
+                a["ricardo"] = ricardo_area(db, a)
+            except Exception as e:
+                print(f"[!] Ricardo area {a['loc_label']} for {chat} failed: {e}")
+    if "ricardo" in sites and any(not a.get("ricardo") for a in areas):
+        for a in areas:
+            a["ricardo"] = None  # one area unknown: keep all of Switzerland, as before
+    ric_areas = [a["ricardo"] for a in areas if a.get("ricardo")]
     sent, rows = 0, []
     for key, label, terms, similar, free_only, pages, (lo, hi) in user_searches(db, user):
         if only and key != only:
@@ -546,50 +603,60 @@ def check_user(tg, db, user, report=None, cache=None, only=None):
         words = [None] if free_only else search_words(terms, similar)
         to_send, site_rows, any_first = [], [], False
         for site in ALL_SITES:
-            url = site_search_url(site, terms[0], user)
+            url = site_search_url(site, terms[0], areas[0])
             if site not in sites:
                 site_rows.append({"site": site, "status": "off", "url": url})
                 continue
             if free_only and site not in FREE_SITES:
                 site_rows.append({"site": site, "status": "no_free", "url": url})
                 continue
-            skey = f"{key}@{site}"
-            seen = db.seen_ids(chat, skey)
-            first_time = not seen
-            any_first = any_first or first_time
-            n_pages = pages if not first_time or free_only else FIRST_WISH_PAGES
-            ids, got, places, errors, total = set(), {}, None, [], 0
-            for word in words:
-                try:
-                    res = run_search(site, word, user, seen, n_pages, first_time, cache, area)
-                except Exception as e:
-                    print(f"[!] {site} search failed ({label} / {word}): {e}")
-                    errors.append(str(e))
+            got, places, errors, total, site_first, site_ok = {}, None, [], 0, False, False
+            for a in areas:  # every area the user follows; a listing found in two counts once
+                skey = f"{key}@{site}#{a['id']}"
+                seen = db.seen_ids(chat, skey)
+                first_time = not seen
+                n_pages = pages if not first_time or free_only else FIRST_WISH_PAGES
+                ids, a_total, a_errors = set(), 0, []
+                for word in words:
+                    try:
+                        res = run_search(site, word, a, seen, n_pages, first_time, cache, a.get("ricardo"))
+                    except Exception as e:
+                        print(f"[!] {site} search failed ({label} / {a['loc_label']} / {word}): {e}")
+                        a_errors.append(str(e))
+                        continue
+                    if res["places"] is not None:
+                        places = sorted(set((places or []) + res["places"]))
+                    a_total += res["all"] or 0
+                    for i in res["items"]:
+                        ids.add(i["id"])
+                        if i["id"] in seen or i["id"] in got:
+                            continue
+                        if free_only:
+                            if anibis.is_free(i):
+                                got[i["id"]] = (i, "exact")
+                            continue
+                        kind = classify(i["title"], terms, similar)
+                        if kind and in_price_range(i, lo, hi):
+                            got[i["id"]] = (i, kind)
+                    if site != "ricardo":
+                        time.sleep(1)
+                if a_errors and not ids:
+                    errors += a_errors
                     continue
-                if res["places"] is not None:
-                    places = sorted(set((places or []) + res["places"]))
-                total += res["all"] or 0
-                for i in res["items"]:
-                    ids.add(i["id"])
-                    if i["id"] in seen or i["id"] in got:
-                        continue
-                    if free_only:
-                        if anibis.is_free(i):
-                            got[i["id"]] = (i, "exact")
-                        continue
-                    kind = classify(i["title"], terms, similar)
-                    if kind and in_price_range(i, lo, hi):
-                        got[i["id"]] = (i, kind)
-                time.sleep(1)
-            if errors and not ids:
-                site_rows.append({"site": site, "status": "error", "err": errors[0], "url": url})
+                site_ok = True
+                site_first = site_first or first_time
+                db.mark_seen(chat, skey, ids or {"-"})
+                # Ricardo is one search for all of Switzerland: its total is the same for every area.
+                total = max(total, a_total) if site == "ricardo" else total + a_total
+            if not site_ok:
+                site_rows.append({"site": site, "status": "error", "err": errors[0] if errors else "?", "url": url})
                 continue
-            db.mark_seen(chat, skey, ids or {"-"})
+            any_first = any_first or site_first
             items = sorted(got.values(), key=lambda x: x[1] != "exact")  # exact matches first
             to_send += items
             n_sim = sum(1 for _, k in items if k == "similar")
-            site_rows.append({"site": site, "status": "ok", "first": first_time, "n": len(items),
-                              "new": 0 if first_time else len(items), "sim": n_sim, "places": places,
+            site_rows.append({"site": site, "status": "ok", "first": site_first, "n": len(items),
+                              "new": 0 if site_first else len(items), "sim": n_sim, "places": places,
                               "url": url, "all": total})
         rows.append((label + ("" if free_only or (lo is None and hi is None)
                               else f" · 💰 {price_label(lo, hi, lang)}"), site_rows))
@@ -628,7 +695,7 @@ def check_user(tg, db, user, report=None, cache=None, only=None):
     db.set(chat, last_check=time.time())
     if report:
         try:
-            tg.send(chat, build_report(db.user(chat), rows, sent, report, area))
+            tg.send(chat, build_report(db.user(chat), rows, sent, report, ric_areas))
         except Exception as e:
             print(f"[!] report to {chat} failed: {e}")
     return sent
@@ -685,8 +752,28 @@ def yes_no(lang, tag):
 
 
 def ask_region(tg, db, user):
+    if len(db.areas(user["chat_id"])) >= MAX_AREAS:
+        show_areas(tg, db, user)
+        return
     db.set_pending(user["chat_id"], {"type": "await_region"})
     tg.send(user["chat_id"], t("ask_region", user["lang"]))
+
+
+def show_areas(tg, db, user):
+    """/region: the areas this user follows, with buttons to remove one or add another."""
+    chat, lang = user["chat_id"], user["lang"]
+    areas = db.areas(chat)
+    if not areas:
+        ask_region(tg, db, user)
+        return
+    db.set_pending(chat, None)
+    buttons = [[{"text": f"🗑 {a['loc_label']}", "callback_data": f"adel:{a['id']}"}] for a in areas]
+    if len(areas) < MAX_AREAS:
+        buttons.append([{"text": t("area_add", lang), "callback_data": "aadd:1"}])
+    text = t("areas", lang, items="\n".join(f"  • {esc(a['loc_label'])}" for a in areas))
+    if len(areas) >= MAX_AREAS:
+        text += "\n\n" + t("area_max", lang, n=MAX_AREAS)
+    tg.send(chat, text, buttons=buttons)
 
 
 def handle_region_text(tg, db, user, text):
@@ -786,7 +873,7 @@ def handle_text(tg, db, jobs, user, text):
         db.set_pending(chat, {"type": "await_lang_only"})
         tg.send(chat, t("choose_lang", lang), buttons=lang_buttons())
     elif cmd == "/region":
-        ask_region(tg, db, user)
+        show_areas(tg, db, user)
     elif cmd in ("/sites", "/site"):
         tg.send(chat, t("sites", lang), buttons=site_buttons(user))
     elif cmd == "/help":
@@ -809,7 +896,7 @@ def handle_text(tg, db, jobs, user, text):
     elif cmd == "/free":
         db.set(chat, free_on=0 if user["free_on"] else 1)
         if user["free_on"]:
-            db.x("DELETE FROM seen WHERE chat_id=? AND search_key='free'", (chat,))
+            db.x("DELETE FROM seen WHERE chat_id=? AND search_key LIKE 'free@%'", (chat,))
         tg.send(chat, t("free_toggled", lang, state=t("off" if user["free_on"] else "on", lang)))
     elif cmd == "/check":
         if not user["loc_id"]:
@@ -877,14 +964,27 @@ def handle_button(tg, db, jobs, user, cb):
             return
         opt = pending["options"][int(value)]
         label = loc_label(opt, lang)
-        db.set(chat, loc_id=opt["id"], loc_radius=opt.get("radius"), loc_label=label, active=1,
-               ricardo_area=None)
-        db.reset_searches(chat)  # new area: start fresh
         db.set_pending(chat, None)
-        tg.send(chat, t("region_saved", lang, label=esc(label), hours=CHECK_EVERY_HOURS,
+        areas = db.areas(chat)
+        if any(a["loc_id"] == opt["id"] and (a["loc_radius"] or None) == (opt.get("radius") or None) for a in areas):
+            tg.send(chat, t("area_dup", lang, label=esc(label)))
+            return
+        if len(areas) >= MAX_AREAS:
+            tg.send(chat, t("area_max", lang, n=MAX_AREAS))
+            return
+        db.add_area(chat, opt["id"], opt.get("radius"), label)  # added next to the others
+        db.set(chat, active=1)
+        tg.send(chat, t("region_saved", lang, label=esc(db.user(chat)["loc_label"]), hours=CHECK_EVERY_HOURS,
                         free=t("on" if user["free_on"] else "off", lang)))
-        # Remember what's listed now, so only later listings alert.
+        # Send what's listed now in the new area; the others only get new listings.
         jobs.put(("init", chat))
+    elif tag == "aadd":
+        ask_region(tg, db, user)
+    elif tag == "adel" and value.isdigit():
+        label = db.del_area(chat, int(value))
+        if label:
+            tg.send(chat, t("area_removed", lang, label=esc(label)))
+        show_areas(tg, db, db.user(chat))
     elif tag == "wish" and pending.get("type") == "confirm_wish":
         db.set_pending(chat, None)
         if value == "yes":
@@ -906,6 +1006,17 @@ def handle_button(tg, db, jobs, user, cb):
 
 # ------------------------------------------------------------------ main loop
 
+def load_config():
+    """config.json, with environment variables taking precedence (handy on
+    Linux servers, in systemd units and containers)."""
+    cfg = json.loads(CONFIG_FILE.read_text(encoding="utf-8-sig")) if CONFIG_FILE.exists() else {}
+    if os.environ.get("TELEGRAM_BOT_TOKEN"):
+        cfg["telegram_bot_token"] = os.environ["TELEGRAM_BOT_TOKEN"]
+    if os.environ.get("ALLOWED_CHAT_IDS"):
+        cfg["allowed_chat_ids"] = re.split(r"[,\s]+", os.environ["ALLOWED_CHAT_IDS"])
+    return cfg
+
+
 def handle_update(tg, db, jobs, chat, cb, msg, lock):
     with lock:
         user = db.user(chat)
@@ -926,14 +1037,24 @@ def main():
         print("bot is already running, exiting")
         return
 
-    cfg = json.loads(CONFIG_FILE.read_text(encoding="utf-8")) if CONFIG_FILE.exists() else {}
+    cfg = load_config()
     token = str(cfg.get("telegram_bot_token", "")).strip()
     if not token or "PASTE" in token or "PUT-YOUR" in token:
-        print("[!] Put your telegram_bot_token in config.json first.")
+        print("[!] Put your telegram_bot_token in config.json (or set TELEGRAM_BOT_TOKEN) first.")
         sys.exit(1)
-    allowed = {str(x) for x in cfg.get("allowed_chat_ids") or []}
+    allowed = {str(x).strip() for x in cfg.get("allowed_chat_ids") or [] if str(x).strip()}
 
     tg = Telegram(token)
+    try:  # a webhook means the Cloudflare version is answering this bot
+        hook = tg.call("getWebhookInfo").get("url")
+    except Exception as e:
+        hook = None
+        print(f"[!] getWebhookInfo: {e}")
+    if hook:
+        print(f"[!] This bot is connected to a webhook ({hook}), probably the Cloudflare version. "
+              "Only one copy can answer a bot. To run it here instead, first run: "
+              "python telegram_setup.py --delete-webhook")
+        sys.exit(1)
     db = DB(DB_FILE)
     jobs = queue.Queue()
     workers = ThreadPoolExecutor(max_workers=4)
@@ -944,7 +1065,7 @@ def main():
             {"command": c, "description": d} for c, d in (
                 ("start", "Start / Starten / Démarrer"), ("add", "Add item / Hinzufügen / Ajouter"),
                 ("list", "My list / Liste"), ("free", "Free items on/off / Gratis"),
-                ("check", "Search now / Jetzt suchen / Chercher"), ("region", "Change area / Gebiet / Zone"),
+                ("check", "Search now / Jetzt suchen / Chercher"), ("region", "Areas / Gebiete / Zones"),
                 ("language", "Language / Sprache / Langue / زبان"),
                 ("sites", "Anibis / tutti / Ricardo"), ("price", "Price range / Preis / Prix / قیمت"), ("help", "Help / Hilfe / Aide"),
                 ("stop", "Stop alerts / Stopp / Arrêter"))])

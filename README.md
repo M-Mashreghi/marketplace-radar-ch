@@ -2,17 +2,24 @@
 
 **A Telegram bot that watches the Swiss second-hand marketplaces [anibis.ch](https://www.anibis.ch), [tutti.ch](https://www.tutti.ch) and [ricardo.ch](https://www.ricardo.ch) for you, and sends new listings straight to your Telegram.**
 
-You tell the bot where you live and what you are looking for, in any language. Every 2 hours it searches all three sites and sends each new listing as its own message, with photo, price, place, description and a link.
+You tell the bot where to look (one place or several) and what you are looking for, in any language. Every 2 hours it searches all three sites and sends each new listing as its own message, with photo, price, place, description and a link.
 
 - 🎁 **Free items:** new "gratis / gratuit / zu verschenken" listings in your area (on by default)
 - 🔎 **Wish list:** up to 20 things you want, typed in any language (`دوچرخه`, `bike`, `vélo`…). The bot translates each one into German, French, Italian and English and searches for all of them
 - 💰 **Price range:** an optional minimum and maximum price per item
-- 📍 **Your area:** a town, a town plus 5 / 10 / 20 / 50 km, a region or a whole canton
+- 📍 **Your areas:** up to 5 places at once, each a town, a town plus 5 / 10 / 20 / 50 km, a region or a whole canton. Every alert searches all of them
 - 🌍 **Four languages:** Persian (فارسی), English, French and German
 - 👥 **Many users:** anyone you share the bot with gets their own language, area and list
 - 🔁 **No duplicates:** each listing is sent once, even when the same ad is on two sites
 
-The bot runs on your own computer (it is written for Windows, but runs anywhere Python does). It uses **only the Python standard library**, so there is nothing to `pip install`.
+You can run it in two places:
+
+| Where | On when | Cost | How |
+|---|---|---|---|
+| **Your Windows PC** | while the PC is on and you're logged in | free | [step 8](#8-keep-it-running-on-windows-or-linux) |
+| **A Linux computer or server** | while it's on (a server: always) | free / your server | [step 8](#linux-systemd) |
+
+The bot is plain Python using **only the standard library**, so there is nothing to `pip install`. For 24/7 without your PC, a small always-on Linux box (a Raspberry Pi, an old laptop, a home server) works well. Cloud servers are often blocked by the marketplaces, which refuse requests from data centres.
 
 > This is an unofficial hobby project. It is not affiliated with anibis.ch, tutti.ch, ricardo.ch or Telegram.
 
@@ -27,7 +34,7 @@ The bot runs on your own computer (it is written for Windows, but runs anywhere 
 5. [Test the connection](#5-test-the-connection-optional)
 6. [Start the bot](#6-start-the-bot)
 7. [First steps in Telegram](#7-first-steps-in-telegram)
-8. [Keep it running on Windows](#8-keep-it-running-on-windows)
+8. [Keep it running on Windows or Linux](#8-keep-it-running-on-windows-or-linux)
 9. [All Telegram commands](#9-all-telegram-commands)
 10. [Sharing the bot with friends](#10-sharing-the-bot-with-friends)
 11. [How it works](#11-how-it-works)
@@ -116,6 +123,14 @@ Open `config.json` in a text editor (Notepad is fine) and paste your token:
 | `telegram_chat_id` | no | Only used by `telegram_setup.py` to send you a test message. Leave it empty; the setup script fills it in. |
 | `allowed_chat_ids` | no | A list of Telegram chat ids that may use the bot, e.g. `["111111111", "222222222"]`. Without it, **anyone** who finds your bot can use it. See [Sharing the bot](#10-sharing-the-bot-with-friends). |
 
+On a server you can use **environment variables** instead of (or on top of) `config.json`; they win over the file:
+
+| Variable | Same as |
+|---|---|
+| `TELEGRAM_BOT_TOKEN` | `telegram_bot_token` |
+| `ALLOWED_CHAT_IDS` | `allowed_chat_ids`, comma separated: `111111111,222222222` |
+| `DATA_DIR` | Folder for `bot.db` and `anibis_alert.log` (default: the project folder) |
+
 A full example with every setting:
 
 ```json
@@ -182,7 +197,7 @@ Open your bot in Telegram and:
    - ✏️ Somewhere else (type another place)
 
    Tap one. Common spellings work too (`Genf`, `Geneva`, `Bienne`, `Zürich`…).
-3. The bot now **checks all three sites** and sends every free item listed in your area right now, followed by a short **setup report** (see below).
+3. The bot now **checks all three sites** and sends every free item listed in your area right now, followed by a short **setup report** (see below). Want to follow more places, for example home and work? Send `/region` and tap **➕ Add an area** (up to 5). Every alert then searches all of them, and a listing found in two places is sent once.
 4. **Send the name of something you want**, in any language, for example `دوچرخه`, `bike` or `canapé`. You don't need a command: any plain text is treated as a new item. The bot translates it and shows the words it will search for, for example *Fahrrad · vélo · bicicletta · bicycle*, plus any **similar names** it found. Tap **✅ Yes**.
 5. The bot asks for a **price range** in CHF. Type one of these, or tap **♾ No limit**:
 
@@ -225,7 +240,9 @@ Listings whose title uses one of the *similar names* rather than the main words 
 
 After you choose an area, after you add an item, after `/check` and after every automatic 2-hour check, the bot sends a short **report** for each search on each site: whether your area was found there, a link to the same search on the site, how many listings it found or how many were new, and any error.
 
-## 8. Keep it running on Windows
+## 8. Keep it running on Windows or Linux
+
+### Windows
 
 When you're happy with it, let Windows start the bot for you, in the background, without a window:
 
@@ -249,7 +266,30 @@ The bot starts about a minute after you install it. Running the installer again 
 
 The computer must be **on and logged in** for the bot to work. If it sleeps, the bot catches up after it wakes. More details are in [SCHEDULE.md](SCHEDULE.md).
 
-**macOS / Linux:** the scheduler scripts are Windows-only. Run `python3 bot.py` inside `tmux` or `screen`, or as a `systemd` service, so it keeps running after you close the terminal.
+<a id="linux-systemd"></a>
+### Linux (systemd)
+
+On Linux (Ubuntu, Debian, Raspberry Pi OS, a cloud server…) the bot runs as a **systemd service**: it starts when the computer starts, restarts itself if it crashes, and keeps running after you log out.
+
+1. Do steps 2 to 6 above (`python3 bot.py` to try it, then `Ctrl+C` to stop it).
+2. In the project folder, run:
+
+   ```
+   bash linux/install_service.sh
+   ```
+
+   It asks for your `sudo` password once and creates the service **marketplace-radar**, running as your user from this folder.
+
+| To… | Do this |
+|---|---|
+| Check it's running | `systemctl status marketplace-radar` |
+| See what it's doing | `journalctl -u marketplace-radar -f` (or `anibis_alert.log`) |
+| Restart after changing files | `sudo systemctl restart marketplace-radar` |
+| Remove it for good | `bash linux/remove_service.sh` |
+
+**macOS:** run `python3 bot.py` inside `tmux` or `screen`, so it keeps running after you close the terminal.
+
+> **Only one copy of the bot at a time.** One Telegram bot can only be answered by one copy. Don't run it on two computers at the same time: stop the old one first.
 
 ## 9. All Telegram commands
 
@@ -263,7 +303,7 @@ The commands also appear in the bot's **menu** button in Telegram.
 | `/price` | Pick an item and set or change its minimum and maximum price. The bot then sends the current listings that fit the new range. |
 | `/free` | Turn free-item alerts on or off. |
 | `/check` | Search now instead of waiting for the next 2-hour check. A report follows. |
-| `/region` | Change your area. All your searches start fresh in the new area. |
+| `/region` | Your areas: tap **➕ Add an area** to follow another place (up to 5), or **🗑** to stop following one. All alerts search every area. A new area first gets what's listed there now. |
 | `/language` | Change the bot's language (also `/lang`, `/sprache`, `/langue`). Your area and list stay. |
 | `/sites` | Turn anibis.ch, tutti.ch and ricardo.ch on or off (tap to toggle; at least one stays on). |
 | `/remove <item>` | Remove an item by name, e.g. `/remove bike` (the 🗑 buttons in `/list` do the same). |
@@ -306,6 +346,8 @@ Things to know:
 | File | Purpose |
 |---|---|
 | `bot.py` | The Telegram bot: users, commands, the 2-hour checks. **Start this.** |
+| `linux/install_service.sh` / `linux/remove_service.sh` | Run the bot as a systemd service on Linux. |
+| `tests/` | Offline tests (`python -m unittest discover tests`) and saved anibis.ch / ricardo.ch pages. |
 | `main.py` | Starts `bot.py`. This is what the Windows scheduled task runs. |
 | `anibis.py` | Searches anibis.ch and tutti.ch and finds location options. |
 | `ricardo.py` | Searches ricardo.ch. |
@@ -313,7 +355,7 @@ Things to know:
 | `translate.py` | Translates wish-list items into search words. |
 | `texts.py` | All bot messages in the four languages. |
 | `anibis_alert.py` | Writes the log file (and contains the older one-shot version of the alert). |
-| `telegram_setup.py` | One-time check of the token; saves your chat id. |
+| `telegram_setup.py` | One-time check of the token; saves your chat id. `--delete-webhook` disconnects a webhook (for example an old Cloudflare Worker). |
 | `config.example.json` | Template for `config.json`. |
 | `ch_postcodes.txt` | Swiss postcode list from GeoNames. |
 | `install_schedule.bat` / `install_schedule.ps1` | Create the Windows scheduled task. |
@@ -344,6 +386,7 @@ If you ever push your token by mistake, revoke it immediately in @BotFather (`/r
 |---|---|
 | The bot doesn't answer | Make sure it's running (a terminal with `python bot.py`, or the scheduled task). Then look at `anibis_alert.log`. |
 | `Put your telegram_bot_token in config.json first.` | `config.json` is missing or still has the placeholder token. See [step 4](#4-create-configjson). |
+| `This bot is connected to a webhook…` in the log | Another program (for example an old Cloudflare Worker) is answering this bot. Only one copy can. To run it on your computer instead: `python telegram_setup.py --delete-webhook`, and stop or delete that other program. |
 | `bot is already running, exiting` in the log | Normal: a copy is already running, so the new one stops. To restart after changing files, stop the old copy first (close its window, or run `remove_schedule.bat` and then `install_schedule.bat`). If a copy you started by hand is still running, end `pythonw.exe` / `python.exe` in Task Manager. |
 | `'python' is not recognized…` | Python isn't on PATH. Reinstall it and tick **Add Python to PATH**, or try `py bot.py`. |
 | The bot can't find my town | Write it as Anibis spells it (`Geneve`, `Zurich`, `Biel`), or use the canton name. |

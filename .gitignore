@@ -6,3 +6,4 @@ bot_state.json
 bot_state.tmp
 bot.db
 bot.db-journal
+d1_import.sql
