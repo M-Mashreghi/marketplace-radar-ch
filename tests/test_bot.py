@@ -203,7 +203,7 @@ class MultiAreaTest(unittest.TestCase):
         self.assertEqual([(a["loc_id"], a["loc_label"]) for a in areas], [("geo-city-lausanne", "Lausanne (town only)")])
         keys = sorted(r["search_key"] for r in new.q("SELECT search_key FROM seen"))
         self.assertEqual(keys, [f"free@anibis#{areas[0]['id']}", f"w1@tutti#{areas[0]['id']}"])
-        bot.DB(path)  # opening it again changes nothing
+        bot.DB(path).con.close()  # opening it again changes nothing
         self.assertEqual(len(new.areas(CHAT)), 1)
         new.con.close()
 
